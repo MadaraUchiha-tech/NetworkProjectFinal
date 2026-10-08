@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BHTTP/1 Annotated Hexdump</title>
+<style>
+  @page { size: A4; margin: 12mm 13mm; }
+  html { background: #fff; }
+  body { margin: 0; color: #111; font: 8.6pt/1.35 "Charter", Georgia, serif; }
+  h1 { font: 700 15pt/1.1 "Helvetica Neue", Arial, sans-serif; margin: 0 0 1mm; }
+  .sub { color: #555; font: 8.4pt "Helvetica Neue", Arial, sans-serif; border-bottom: 1.2pt solid #111; padding-bottom: 1.6mm; margin-bottom: 2.4mm; }
+  h2 { font: 700 9.8pt "Helvetica Neue", Arial, sans-serif; margin: 4mm 0 1mm; break-after: avoid; }
+  p { margin: 0 0 1.4mm; }
+  code, pre, .hx { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.6pt; }
+  pre { background: #f3f3f1; padding: 1.6mm 2.2mm; margin: 0 0 1.6mm; line-height: 1.3; break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; break-inside: auto; margin-bottom: 2mm; }
+  tr { break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5mm 2mm 0.5mm 0; border-bottom: 0.4pt solid #ccc; }
+  th { font: 700 7.6pt "Helvetica Neue", Arial, sans-serif; border-bottom: 0.8pt solid #111; }
+  .f td:first-child { font-family: "SF Mono", Menlo, monospace; font-size: 7.4pt; white-space: nowrap; color: #555; }
+  .f td:nth-child(2) { white-space: nowrap; }
+  .f td:nth-child(3) { white-space: nowrap; font-weight: 600; }
+  tr.hdr td:nth-child(2) { color: #9a3412; }
+  tr.pre td:nth-child(2) { color: #1d4ed8; }
+  tr.len td:nth-child(2) { color: #047857; }
+  tr.hdr { background: #fdf4ee; }
+  .legend span { font-family: "SF Mono", Menlo, monospace; font-size: 7.4pt; padding: 0 1.2mm; margin-right: 2mm; }
+</style>
+</head>
+<body>
+<h1>BHTTP/1 — annotated hexdump of one complete exchange</h1>
+<div class="sub">Captured from <code>./bcurl -v localhost:9000/index.html</code> against <code>./bserve ./www 9000</code>. Raw capture: <code>docs/capture.txt</code></div>
+
+<p>Here is everything that crossed the TCP connection. The client sent one frame of 61 octets. The server sent back two frames, 89 + 47 = 136 octets, and the connection then stayed open. Offsets count octets from the start of each direction's byte stream. Each frame starts with the same 8-octet header: Length (2 octets), Type (1), Flags (1), and Request ID (4). After the header come exactly Length octets of payload. Inside a HEADERS payload, every field is a prefix octet, a 2-octet value length, and then the value.</p>
+<p class="legend">Colour key: <span style="color:#9a3412;background:#fdf4ee">frame header</span><span style="color:#1d4ed8">field prefix (static index)</span><span style="color:#047857">value length</span><span>value / body octets</span></p>
+
+<!--FRAMES-->
+
+<h2>What the octets add up to</h2>
+<table>
+<tr><th></th><th>BHTTP/1</th><th>Same message as HTTP/1.1 text</th><th>Notes</th></tr>
+<tr><td>request</td><td>61</td><td>84</td><td>8 frame header + 5 × 3 field overhead + 38 value octets</td></tr>
+<tr><td>response head</td><td>89</td><td>134</td><td>8 frame header + 5 × 3 field overhead + 66 value octets</td></tr>
+<tr><td>response body</td><td>8 + 39</td><td>39</td><td>one DATA frame; END marks the end, so no chunked encoding is needed</td></tr>
+</table>
+<p>Every header name in this exchange was in the static table, so each name cost exactly one octet. A header outside the table, such as <code>x-trace: 7</code>, would be sent literally:</p>
+<pre>00 07 "x-trace" 00 01 "7"</pre>
+<p>That is a literal marker, the name's length, the name, the value's length and the value. If <code>-g</code> had been given, an extra frame such as <code>00 03 ba ff 00 00 00 01 "v2?"</code> would sit in front of the request. Its type 0xBA is unassigned, so the server reads its 3 payload octets, discards them, and answers exactly as shown above.</p>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BHTTP/1 Annotated Hexdump</title>
+<style>
+  @page { size: A4; margin: 12mm 13mm; }
+  html { background: #fff; }
+  body { margin: 0; color: #111; font: 8.6pt/1.35 "Charter", Georgia, serif; }
+  h1 { font: 700 15pt/1.1 "Helvetica Neue", Arial, sans-serif; margin: 0 0 1mm; }
+  .sub { color: #555; font: 8.4pt "Helvetica Neue", Arial, sans-serif; border-bottom: 1.2pt solid #111; padding-bottom: 1.6mm; margin-bottom: 2.4mm; }
+  h2 { font: 700 9.8pt "Helvetica Neue", Arial, sans-serif; margin: 4mm 0 1mm; break-after: avoid; }
+  p { margin: 0 0 1.4mm; }
+  code, pre, .hx { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.6pt; }
+  pre { background: #f3f3f1; padding: 1.6mm 2.2mm; margin: 0 0 1.6mm; line-height: 1.3; break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; break-inside: auto; margin-bottom: 2mm; }
+  tr { break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5mm 2mm 0.5mm 0; border-bottom: 0.4pt solid #ccc; }
+  th { font: 700 7.6pt "Helvetica Neue", Arial, sans-serif; border-bottom: 0.8pt solid #111; }
+  .f td:first-child { font-family: "SF Mono", Menlo, monospace; font-size: 7.4pt; white-space: nowrap; color: #555; }
+  .f td:nth-child(2) { white-space: nowrap; }
+  .f td:nth-child(3) { white-space: nowrap; font-weight: 600; }
+  tr.hdr td:nth-child(2) { color: #9a3412; }
+  tr.pre td:nth-child(2) { color: #1d4ed8; }
+  tr.len td:nth-child(2) { color: #047857; }
+  tr.hdr { background: #fdf4ee; }
+  .legend span { font-family: "SF Mono", Menlo, monospace; font-size: 7.4pt; padding: 0 1.2mm; margin-right: 2mm; }
+</style>
+</head>
+<body>
+<h1>BHTTP/1 — annotated hexdump of one complete exchange</h1>
+<div class="sub">Captured from <code>./bcurl -v localhost:9000/index.html</code> against <code>./bserve ./www 9000</code>. Raw capture: <code>docs/capture.txt</code></div>
+
+<p>Here is everything that crossed the TCP connection. The client sent one frame of 61 octets. The server sent back two frames, 89 + 47 = 136 octets, and the connection then stayed open. Offsets count octets from the start of each direction's byte stream. Each frame starts with the same 8-octet header: Length (2 octets), Type (1), Flags (1), and Request ID (4). After the header come exactly Length octets of payload. Inside a HEADERS payload, every field is a prefix octet, a 2-octet value length, and then the value.</p>
+<p class="legend">Colour key: <span style="color:#9a3412;background:#fdf4ee">frame header</span><span style="color:#1d4ed8">field prefix (static index)</span><span style="color:#047857">value length</span><span>value / body octets</span></p>
+
+<h2>Client → server: frame 1, HEADERS (the request) — 61 octets</h2><pre>0000  00 35 01 01 00 00 00 01  01 00 03 47 45 54 02 00  |.5.........GET..|
+0010  0b 2f 69 6e 64 65 78 2e  68 74 6d 6c 04 00 0e 6c  |./index.html...l|
+0020  6f 63 61 6c 68 6f 73 74  3a 39 30 30 30 05 00 07  |ocalhost:9000...|
+0030  62 63 75 72 6c 2f 31 06  00 03 2a 2f 2a           |bcurl/1...*/*|</pre><table class="f"><tr><th>Offset</th><th>Octets</th><th>Field</th><th>Meaning</th></tr><tr class="hdr"><td>0000–0001</td><td class="hx">00 35</td><td>Length</td><td>0x0035 = 53: payload octets after this 8-octet header</td></tr><tr class="hdr"><td>0002</td><td class="hx">01</td><td>Type</td><td>0x01 = HEADERS</td></tr><tr class="hdr"><td>0003</td><td class="hx">01</td><td>Flags</td><td>0x01 = END: no request body follows</td></tr><tr class="hdr"><td>0004–0007</td><td class="hx">00 00 00 01</td><td>Request ID</td><td>1: first request on this connection</td></tr><tr class="pre"><td>0008</td><td class="hx">01</td><td>prefix</td><td>0x01: static index 1 = <code>:method</code> (name costs 1 octet)</td></tr><tr class="len"><td>0009–000a</td><td class="hx">00 03</td><td>value length</td><td>0x0003 = 3</td></tr><tr class="val"><td>000b–000d</td><td class="hx">47 45 54</td><td>value</td><td>"GET"</td></tr><tr class="pre"><td>000e</td><td class="hx">02</td><td>prefix</td><td>0x02: static index 2 = <code>:path</code> (name costs 1 octet)</td></tr><tr class="len"><td>000f–0010</td><td class="hx">00 0b</td><td>value length</td><td>0x000b = 11</td></tr><tr class="val"><td>0011–001b</td><td class="hx">2f 69 6e 64 65 78 2e 68 74 6d 6c</td><td>value</td><td>"/index.html"</td></tr><tr class="pre"><td>001c</td><td class="hx">04</td><td>prefix</td><td>0x04: static index 4 = <code>host</code> (name costs 1 octet)</td></tr><tr class="len"><td>001d–001e</td><td class="hx">00 0e</td><td>value length</td><td>0x000e = 14</td></tr><tr class="val"><td>001f–002c</td><td class="hx">6c 6f 63 61 6c 68 6f 73 74 3a 39 30 … (14 octets)</td><td>value</td><td>"localhost:9000"</td></tr><tr class="pre"><td>002d</td><td class="hx">05</td><td>prefix</td><td>0x05: static index 5 = <code>user-agent</code> (name costs 1 octet)</td></tr><tr class="len"><td>002e–002f</td><td class="hx">00 07</td><td>value length</td><td>0x0007 = 7</td></tr><tr class="val"><td>0030–0036</td><td class="hx">62 63 75 72 6c 2f 31</td><td>value</td><td>"bcurl/1"</td></tr><tr class="pre"><td>0037</td><td class="hx">06</td><td>prefix</td><td>0x06: static index 6 = <code>accept</code> (name costs 1 octet)</td></tr><tr class="len"><td>0038–0039</td><td class="hx">00 03</td><td>value length</td><td>0x0003 = 3</td></tr><tr class="val"><td>003a–003c</td><td class="hx">2a 2f 2a</td><td>value</td><td>"*/*"</td></tr></table>
+<h2>Server → client: frame 1, HEADERS (the response head) — 89 octets</h2><pre>0000  00 51 01 00 00 00 00 01  03 00 03 32 30 30 09 00  |.Q.........200..|
+0010  08 62 73 65 72 76 65 2f  31 0a 00 1d 54 68 75 2c  |.bserve/1...Thu,|
+0020  20 30 38 20 4f 63 74 20  32 30 32 36 20 30 39 3a  | 08 Oct 2026 09:|
+0030  33 34 3a 31 36 20 47 4d  54 07 00 18 74 65 78 74  |34:16 GMT...text|
+0040  2f 68 74 6d 6c 3b 20 63  68 61 72 73 65 74 3d 75  |/html; charset=u|
+0050  74 66 2d 38 08 00 02 33  39                       |tf-8...39|</pre><table class="f"><tr><th>Offset</th><th>Octets</th><th>Field</th><th>Meaning</th></tr><tr class="hdr"><td>0000–0001</td><td class="hx">00 51</td><td>Length</td><td>0x0051 = 81: payload octets after this 8-octet header</td></tr><tr class="hdr"><td>0002</td><td class="hx">01</td><td>Type</td><td>0x01 = HEADERS</td></tr><tr class="hdr"><td>0003</td><td class="hx">00</td><td>Flags</td><td>0x00: END clear, so DATA frames follow</td></tr><tr class="hdr"><td>0004–0007</td><td class="hx">00 00 00 01</td><td>Request ID</td><td>1: first request on this connection</td></tr><tr class="pre"><td>0008</td><td class="hx">03</td><td>prefix</td><td>0x03: static index 3 = <code>:status</code> (name costs 1 octet)</td></tr><tr class="len"><td>0009–000a</td><td class="hx">00 03</td><td>value length</td><td>0x0003 = 3</td></tr><tr class="val"><td>000b–000d</td><td class="hx">32 30 30</td><td>value</td><td>"200" — three ASCII digits</td></tr><tr class="pre"><td>000e</td><td class="hx">09</td><td>prefix</td><td>0x09: static index 9 = <code>server</code> (name costs 1 octet)</td></tr><tr class="len"><td>000f–0010</td><td class="hx">00 08</td><td>value length</td><td>0x0008 = 8</td></tr><tr class="val"><td>0011–0018</td><td class="hx">62 73 65 72 76 65 2f 31</td><td>value</td><td>"bserve/1"</td></tr><tr class="pre"><td>0019</td><td class="hx">0a</td><td>prefix</td><td>0x0a: static index 10 = <code>date</code> (name costs 1 octet)</td></tr><tr class="len"><td>001a–001b</td><td class="hx">00 1d</td><td>value length</td><td>0x001d = 29</td></tr><tr class="val"><td>001c–0038</td><td class="hx">54 68 75 2c 20 30 38 20 4f 63 74 20 … (29 octets)</td><td>value</td><td>"Thu, 08 Oct 2026 09:34:16 GMT" — RFC 1123 time, 29 octets</td></tr><tr class="pre"><td>0039</td><td class="hx">07</td><td>prefix</td><td>0x07: static index 7 = <code>content-type</code> (name costs 1 octet)</td></tr><tr class="len"><td>003a–003b</td><td class="hx">00 18</td><td>value length</td><td>0x0018 = 24</td></tr><tr class="val"><td>003c–0053</td><td class="hx">74 65 78 74 2f 68 74 6d 6c 3b 20 63 … (24 octets)</td><td>value</td><td>"text/html; charset=utf-8" — chosen from the .html extension</td></tr><tr class="pre"><td>0054</td><td class="hx">08</td><td>prefix</td><td>0x08: static index 8 = <code>content-length</code> (name costs 1 octet)</td></tr><tr class="len"><td>0055–0056</td><td class="hx">00 02</td><td>value length</td><td>0x0002 = 2</td></tr><tr class="val"><td>0057–0058</td><td class="hx">33 39</td><td>value</td><td>"39" — advisory; END is what ends the body</td></tr></table>
+<h2>Server → client: frame 2, DATA (the body) — 47 octets</h2><pre>0059  00 27 00 01 00 00 00 01  3c 21 64 6f 63 74 79 70  |.&#x27;......&lt;!doctyp|
+0069  65 20 68 74 6d 6c 3e 0a  3c 68 31 3e 68 65 6c 6c  |e html&gt;.&lt;h1&gt;hell|
+0079  6f 2c 20 62 69 6e 61 72  79 3c 2f 68 31 3e 0a     |o, binary&lt;/h1&gt;.|</pre><table class="f"><tr><th>Offset</th><th>Octets</th><th>Field</th><th>Meaning</th></tr><tr class="hdr"><td>0059–005a</td><td class="hx">00 27</td><td>Length</td><td>0x0027 = 39: payload octets after this 8-octet header</td></tr><tr class="hdr"><td>005b</td><td class="hx">00</td><td>Type</td><td>0x00 = DATA</td></tr><tr class="hdr"><td>005c</td><td class="hx">01</td><td>Flags</td><td>0x01 = END: last frame of this response</td></tr><tr class="hdr"><td>005d–0060</td><td class="hx">00 00 00 01</td><td>Request ID</td><td>1: first request on this connection</td></tr><tr class="val"><td>0061–0087</td><td class="hx">3c 21 64 6f 63 74 79 70 65 20 68 74 … (39 octets)</td><td>body</td><td>the 39 octets of www/index.html, sent unchanged: &#x27;&lt;!doctype html&gt;\n&lt;h1&gt;hello, binary&lt;/h1&gt;\n&#x27;</td></tr></table>
+
+<h2>What the octets add up to</h2>
+<table>
+<tr><th></th><th>BHTTP/1</th><th>Same message as HTTP/1.1 text</th><th>Notes</th></tr>
+<tr><td>request</td><td>61</td><td>84</td><td>8 frame header + 5 × 3 field overhead + 38 value octets</td></tr>
+<tr><td>response head</td><td>89</td><td>134</td><td>8 frame header + 5 × 3 field overhead + 66 value octets</td></tr>
+<tr><td>response body</td><td>8 + 39</td><td>39</td><td>one DATA frame; END marks the end, so no chunked encoding is needed</td></tr>
+</table>
+<p>Every header name in this exchange was in the static table, so each name cost exactly one octet. A header outside the table, such as <code>x-trace: 7</code>, would be sent literally:</p>
+<pre>00 07 "x-trace" 00 01 "7"</pre>
+<p>That is a literal marker, the name's length, the name, the value's length and the value. If <code>-g</code> had been given, an extra frame such as <code>00 03 ba ff 00 00 00 01 "v2?"</code> would sit in front of the request. Its type 0xBA is unassigned, so the server reads its 3 payload octets, discards them, and answers exactly as shown above.</p>
+</body>
+</html>

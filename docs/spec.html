@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BHTTP/1 Specification</title>
+<style>
+  @page { size: A4; margin: 11mm 13mm 11mm 13mm; }
+  :root { --ink:#111; --mute:#555; --rule:#bbb; --code:#f3f3f1; --accent:#9a3412; }
+  * { box-sizing: border-box; }
+  html { background: #fff; }
+  body { margin: 0; color: var(--ink); font: 8.3pt/1.33 "Charter", "Iowan Old Style", Georgia, serif; }
+  h1 { font: 700 15pt/1.1 "Helvetica Neue", Arial, sans-serif; margin: 0 0 1mm; }
+  .sub { color: var(--mute); font: 8.4pt "Helvetica Neue", Arial, sans-serif; margin-bottom: 2.4mm; border-bottom: 1.2pt solid var(--ink); padding-bottom: 1.6mm; }
+  h2 { font: 700 9.6pt/1.2 "Helvetica Neue", Arial, sans-serif; margin: 2.6mm 0 0.8mm; break-after: avoid; }
+  h2 .n { color: var(--accent); margin-right: 1.2mm; }
+  p { margin: 0 0 1.3mm; }
+  code, pre, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 7.6pt; }
+  code { background: var(--code); padding: 0 0.6mm; border-radius: 0.6mm; }
+  pre { background: var(--code); margin: 0.8mm 0 1.5mm; padding: 1.4mm 2mm; line-height: 1.28; white-space: pre; break-inside: avoid; }
+  .cols { column-count: 2; column-gap: 6mm; column-rule: 0.4pt solid #ddd; }
+  table { border-collapse: collapse; width: 100%; margin: 0.6mm 0 1.6mm; break-inside: avoid; }
+  th, td { text-align: left; vertical-align: top; padding: 0.45mm 1.4mm 0.45mm 0; border-bottom: 0.4pt solid var(--rule); }
+  th { font: 700 7.6pt "Helvetica Neue", Arial, sans-serif; border-bottom: 0.8pt solid var(--ink); }
+  ul, ol { margin: 0 0 1.3mm; padding-left: 4mm; }
+  li { margin: 0 0 0.4mm; }
+  .must { border: 1.2pt solid var(--accent); padding: 1.4mm 2mm; margin: 1mm 0 1.8mm; break-inside: avoid; }
+  .must b { color: var(--accent); }
+  .kw { font: 700 7.6pt "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.02em; }
+  .page2 { break-before: page; }
+  .foot { color: var(--mute); font-size: 7.6pt; margin-top: 1.4mm; }
+</style>
+</head>
+<body>
+
+<h1>BHTTP/1 — HTTP semantics in binary frames</h1>
+<div class="sub">Protocol specification, version 1 · reference implementations: <code>bserve</code> (server) and <code>bcurl</code> (client) · 2026-10-08</div>
+
+<div class="cols">
+
+<p>BHTTP/1 carries HTTP-style requests and responses (methods, paths, status codes, header fields) over a single TCP connection. Instead of text lines it uses length-prefixed binary <i>frames</i> and a small table of numbered header names. The key words <span class="kw">MUST</span>, <span class="kw">MUST NOT</span>, <span class="kw">SHOULD</span> and <span class="kw">MAY</span> are used as in RFC 2119. All multi-octet integers are unsigned and big-endian (network byte order).</p>
+
+<h2><span class="n">1</span>Connection model</h2>
+<p>The client opens one TCP connection to the server (there is no registered port; <b>9000</b> is the default). It then sends any number of requests on that connection, one after another. The server <span class="kw">MUST</span> keep the connection open after each response. Only the client closes it, by closing TCP. The server <span class="kw">MAY</span> close a connection that has been idle (between frames) for 60 s or more. Requests <span class="kw">MAY</span> be pipelined, meaning a client can send several before reading any response. The server <span class="kw">MUST</span> answer them in the order received. A client <span class="kw">MUST NOT</span> start a new request until the previous request is complete, which means a frame carrying END has been sent for it.</p>
+
+<h2><span class="n">2</span>Frame header</h2>
+<p>Every octet on the connection belongs to a frame. A frame is an 8-octet header followed by <i>Length</i> octets of payload:</p>
+<pre>octet  0       1       2       3
+     +-------+-------+-------+-------+
+   0 |  Length (16)  | Type  | Flags |
+     +-------+-------+-------+-------+
+   4 |        Request ID (32)        |
+     +-------+-------+-------+-------+
+   8 |  Payload (Length octets) ...  |</pre>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td>Length</td><td>Payload size in octets, 0–65 535. It does not count the 8-octet header.</td></tr>
+<tr><td>Type</td><td>Frame type (§3). It decides how the payload is read.</td></tr>
+<tr><td>Flags</td><td>Bits whose meaning depends on the type. Bit 0x01 is <b>END</b> on both DATA and HEADERS. Senders <span class="kw">MUST</span> set unassigned bits to 0, and receivers <span class="kw">MUST</span> ignore them.</td></tr>
+<tr><td>Request&nbsp;ID</td><td>Identifies which request this frame belongs to. The client picks a non-zero value for each request: 1 for the first, then strictly increasing. Every frame of the response carries the same value. ID 0 is reserved for frames that concern the whole connection; v1 defines none.</td></tr>
+</table>
+<p>A receiver <span class="kw">MUST</span> always read exactly Length payload octets, whatever the type. That rule is why framing can never lose its place. Whatever a payload contains, the next frame starts exactly Length octets after it.</p>
+
+<h2><span class="n">3</span>Frame types</h2>
+<table>
+<tr><th>Type</th><th>Name</th><th>Payload</th></tr>
+<tr><td class="mono">0x00</td><td>DATA</td><td>Message body octets, sent as-is. A body may span many DATA frames. The last one carries END, and it may be empty.</td></tr>
+<tr><td class="mono">0x01</td><td>HEADERS</td><td>One complete header block (§4). END means no body follows.</td></tr>
+<tr><td class="mono">0x02–0xFF</td><td><i>unassigned</i></td><td>Reserved for future versions.</td></tr>
+</table>
+<div class="must"><b>Extensibility rule.</b> A receiver that meets a frame type it does not know <span class="kw">MUST</span> skip it cleanly. It reads and discards the Length payload octets and continues with the next frame. This holds whatever the Request ID or Flags, and even between a request's HEADERS and DATA frames. It <span class="kw">MUST NOT</span> reply, report an error or close the connection. This is how version 2 can add frame types that a v1 peer safely ignores.</div>
+
+<h2><span class="n">4</span>Header block</h2>
+<p>A header block is a sequence of fields, with no count and no terminator. The HEADERS frame's Length marks where the block ends. Each field is:</p>
+<pre>indexed (idx = 0x01..0x0A):
+  | idx (1) | vlen (2) | value (vlen) |
+literal:
+  | 0x00 (1) | nlen (1) | name (nlen) |
+  | vlen (2) | value (vlen) |</pre>
+<p>Indexes 0x01–0x0A name the ten fields that bserve and bcurl actually send. The name is then implied by its number, and only the value is length-prefixed:</p>
+<table>
+<tr><th>#</th><th>Name</th><th>#</th><th>Name</th></tr>
+<tr><td>1</td><td class="mono">:method</td><td>6</td><td class="mono">accept</td></tr>
+<tr><td>2</td><td class="mono">:path</td><td>7</td><td class="mono">content-type</td></tr>
+<tr><td>3</td><td class="mono">:status</td><td>8</td><td class="mono">content-length</td></tr>
+<tr><td>4</td><td class="mono">host</td><td>9</td><td class="mono">server</td></tr>
+<tr><td>5</td><td class="mono">user-agent</td><td>10</td><td class="mono">date</td></tr>
+</table>
+<p>Any other name uses the literal form: 0x00, a 1-octet name length (1–255), then the name. Names <span class="kw">MUST</span> be lower-case printable ASCII without spaces. Values are 0–65 535 arbitrary octets; header values in this version are ASCII text. A sender <span class="kw">SHOULD</span> use the index whenever one exists. A receiver <span class="kw">MUST</span> also accept the literal spelling of a table name. Receivers <span class="kw">MUST</span> ignore fields they do not understand.</p>
+<p>A block is <b>malformed</b> in any of these cases:</p>
+<ul>
+<li>A length runs past the end of the block.</li>
+<li>A prefix octet is in the unassigned range 0x0B–0xFF.</li>
+<li>A literal name is empty or contains a forbidden octet.</li>
+</ul>
+<p>A whole block <span class="kw">MUST</span> fit in one HEADERS frame, so its limit is 65 535 octets.</p>
+
+<h2><span class="n">5</span>Messages</h2>
+<p><b>Request.</b> A request is one HEADERS frame. It <span class="kw">MUST</span> contain <code>:method</code> and <code>:path</code> exactly once each, and <code>:path</code> <span class="kw">MUST</span> start with <code>/</code>. It <span class="kw">SHOULD</span> contain <code>host</code>. If END is clear, a body follows in DATA frames, the last of which carries END. Methods: <code>GET</code> and <code>HEAD</code>. The server reads and discards any request body, because v1 defines no method that uses one.</p>
+<p><b>Response.</b> A response is one HEADERS frame, with <code>:status</code> as three ASCII digits. DATA frames follow until one carries END. If there is no body (HEAD, an empty file), the HEADERS frame itself carries END. The server <span class="kw">SHOULD</span> send <code>content-length</code>, but END is what delimits the body. A response <span class="kw">MUST</span> carry the Request ID of the request it answers.</p>
+
+
+
+<h2><span class="n">6</span>Server behaviour</h2>
+<p>Usage: <code>bserve ROOT PORT</code>. To resolve <code>:path</code> to a file, the server:</p>
+<ol>
+<li>Removes everything from the first <code>?</code> or <code>#</code> onwards.</li>
+<li>Decodes <code>%XX</code> escapes. A bad escape, or one that decodes to NUL, is malformed.</li>
+<li>Appends the decoded path to ROOT. A trailing <code>/</code> means <code>index.html</code>.</li>
+<li>Resolves symlinks and <code>..</code>. The result <span class="kw">MUST</span> lie inside ROOT, or the server returns 404. A directory maps to its <code>index.html</code>.</li>
+<li>Serves the result if it is a regular, readable file, and returns 404 otherwise.</li>
+</ol>
+<table>
+<tr><th>Status</th><th>When</th></tr>
+<tr><td>200</td><td>File found. The body is its octets, with <code>content-type</code> chosen from the file extension.</td></tr>
+<tr><td>400</td><td>Malformed request, which is any of:
+<ul>
+<li>a malformed header block</li>
+<li><code>:method</code> or <code>:path</code> missing or repeated</li>
+<li>a path that does not start with <code>/</code></li>
+<li>a bad escape</li>
+<li>Request ID 0</li>
+<li>DATA that belongs to no open request</li>
+<li>HEADERS sent while a request body is still open</li>
+</ul></td></tr>
+<tr><td>404</td><td>No such file, not a regular file, or outside ROOT.</td></tr>
+<tr><td>405</td><td>A method other than GET or HEAD.</td></tr>
+</table>
+<p>Error responses carry a short <code>text/plain</code> body such as <code>404 Not Found</code>. <b>A 400 does not close the connection.</b> Since every frame's length was honoured (§2), a malformed request costs only its own frames, and the next request is served normally. The only connection-level failure is TCP closing or timing out in the middle of a frame. In that case no frame boundary can be trusted, so the server closes the connection.</p>
+
+<h2><span class="n">7</span>Client behaviour</h2>
+<p>Usage: <code>bcurl [-v] [-I] [-g] URL [URL | /path …]</code>. Here URL is <code>[bhttp://]host[:port][/path]</code>.</p>
+<ul>
+<li>The client opens <b>exactly one</b> connection and sends every request on it, in order, with IDs 1, 2, 3 and so on.</li>
+<li>Every URL must name the same host and port. This is checked before the client dials, so a mismatched URL exits with status 2 without a connection attempt.</li>
+<li>Response bodies go to stdout.</li>
+<li><code>-v</code> writes a summary and full hexdump of every frame sent (<code>&gt;</code>) and received (<code>&lt;</code>) to stderr, including frames that were skipped.</li>
+<li><code>-I</code> sends HEAD and prints the response headers.</li>
+<li>Exit status: 0 if every response is 1xx–3xx, 4 if any is 4xx, 5 if any is 5xx. Status 1 means a network or protocol error. Status 2 means a usage error.</li>
+</ul>
+<p>The client treats each of these as a protocol error: a response frame with a Request ID it never sent, DATA before HEADERS, a missing <code>:status</code>, or a connection that closes before END.</p>
+
+<h2><span class="n">8</span>Why these widths? (HTTP/2 chose 24/8/8/31)</h2>
+<p>HTTP/2's 9-octet header has these fields:</p>
+<ul>
+<li><b>24-bit length.</b> Peers start at a 16 KiB frame limit and can negotiate up to 16 MiB with SETTINGS.</li>
+<li><b>8-bit type and 8-bit flags.</b> These leave room for extensions.</li>
+<li><b>A reserved bit plus a 31-bit stream ID.</b> Many concurrent streams are interleaved on one connection, with odd IDs for the client and even IDs for the server. Keeping the top bit clear lets languages without unsigned 32-bit integers, such as Java, store the ID safely.</li>
+</ul>
+<p>BHTTP/1 has no multiplexing and no negotiation, so each field is sized for the job it actually does:</p>
+<table>
+<tr><th>Field</th><th>Choice and defence</th></tr>
+<tr><td>Length&nbsp;16</td><td>With nothing negotiated, the field's width <i>is</i> the frame limit. 64 KiB per frame keeps bulk-transfer overhead to 8/65 543 ≈ 0.012 %. It also means every receiver can hold any frame, including one it is skipping, in a fixed 64 KiB buffer. A 24-bit field without SETTINGS would only make every receiver accept 16 MiB frames from any stranger.</td></tr>
+<tr><td>Type&nbsp;8</td><td>Two types are used, and 254 are left for v2. That is plenty, and the skip rule makes each new type safe to deploy.</td></tr>
+<tr><td>Flags&nbsp;8</td><td>One bit is used today, and the other seven are reserved for each type's future needs, such as a "compressed" bit on DATA.</td></tr>
+<tr><td>Request&nbsp;ID&nbsp;32</td><td>Without multiplexing, the ID is still useful in three ways:
+<ul>
+<li>A client can detect a desynchronised or misrouted response.</li>
+<li>ID 0 leaves a place for connection-level frames.</li>
+<li>v2 can add multiplexing without changing the header layout.</li>
+</ul>
+There is no reserved bit, because C, Go, Python and Rust all have unsigned 32-bit integers.</td></tr>
+<tr><td>Total&nbsp;8</td><td>Two 32-bit words. The header can be parsed with two aligned loads, and in a 16-octet hexdump row the header is always the first 8 octets of the row.</td></tr>
+</table>
+<p><b>Header names.</b> Numbering the ten names we send is the first HPACK mechanism, the static table. Length-prefixing the rest is the second, string literals. Together they shrink the example request from 84 octets of HTTP/1.1 text to 61, and the response header from 134 to 89. Values are never compressed: there is no Huffman coding and no dynamic table, so there is no compression state shared between the two ends to get out of step.</p>
+
+<h2><span class="n">9</span>Room for version 2</h2>
+<ul>
+<li><b>Adding frame types.</b> Because unknown types are skipped (§3), v2 can introduce new ones, for example a SETTINGS frame on ID 0. A v1 peer ignores them, so a v2 client can send them speculatively. If the server's reply never uses them, the server speaks v1.</li>
+<li><b>Adding flags.</b> Unknown flags are ignored, so new flags work the same way.</li>
+<li><b>Adding static-table indexes.</b> This is <i>not</i> safe without negotiation. An unknown index makes a block malformed, because the receiver could not know the field's name. New indexes must therefore wait until a v2-only frame has confirmed that the peer understands them.</li>
+</ul>
+
+<h2><span class="n">10</span>Worked example</h2>
+<p>This is the request frame for <code>GET /index.html</code>, in hex. The first line is the frame header, and each line after it is one header field:</p>
+<pre>00 35 01 01 00 00 00 01      frame header
+01 00 03 "GET"               :method
+02 00 0b "/index.html"       :path
+04 00 0e "localhost:9000"    host
+05 00 07 "bcurl/1"           user-agent
+06 00 03 "*/*"               accept</pre>
+<p>The header gives Length 0x35 = 53, type HEADERS, flags END and ID 1. Field 1 (<code>:method</code>) has value length 3, field 2 (<code>:path</code>) has length 11, and so on. The 8-octet header plus 53 payload octets makes 61 octets on the wire. <code>docs/HEXDUMP</code> annotates every octet of a full exchange.</p>
+<p class="foot">Conformance: <code>make test</code> runs 42 checks from an independent Python implementation of this document. It drives bserve with hand-built valid, malformed and unknown frames, and drives bcurl against a deliberately awkward Python server.</p>
+
+</div>
+</body>
+</html>
